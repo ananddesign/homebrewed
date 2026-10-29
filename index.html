@@ -165,9 +165,19 @@
     .dock { bottom: auto; top: calc(66px + env(safe-area-inset-top, 0px)); }
     .beat-label { display: none; }
     .beat { padding: 11px 14px; }
+    .butfirst { top: calc(17vh + env(safe-area-inset-top, 0px)); }
   }
   @media (prefers-reduced-motion: reduce) { .receipt-swing { animation: none; } .receipt-wrap { transition: opacity 0.3s; } html.scrolled .receipt-wrap { transform: none; } }
   @media (prefers-reduced-motion: reduce) { .mouse i, .beat.playing .bars i { animation: none; } }
+
+  .butfirst {
+    position: fixed; z-index: 2; left: 0; right: 0; top: calc(11vh + env(safe-area-inset-top, 0px)); display: flex; flex-direction: column; align-items: center; gap: 4px;
+    pointer-events: none; text-align: center; opacity: 0; transform: translateY(14px); transition: opacity 0.6s, transform 0.8s cubic-bezier(.2,.8,.2,1);
+    padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  }
+  .butfirst.on { opacity: 1; transform: none; }
+  .bf-main { font: italic 400 clamp(48px, 7.4vw, 112px)/1 var(--font-display); color: #fbf7ee; text-shadow: 0 4px 28px rgba(40, 20, 4, 0.55), 0 1px 2px rgba(40, 20, 4, 0.4); text-wrap: balance; }
+  .bf-sub { font: 600 clamp(22px, 2.4vw, 32px)/1.1 var(--font-hand); color: #ffd9a0; text-shadow: 0 2px 12px rgba(40, 20, 4, 0.6); }
 
   /* ---------- scroll story ---------- */
   #story { position: relative; z-index: 1; pointer-events: none; }
@@ -357,6 +367,7 @@
     <button class="chip" id="playPause" type="button">Pause</button>
   </div>
 </div>
+<div class="butfirst" id="butfirst" aria-hidden="true"><span class="bf-main">But first, coffee.</span><span class="bf-sub" id="bfSub">pulling a shot…</span></div>
 <div class="dock">
   <button id="mode" class="pill round" type="button" aria-pressed="false" aria-label="Switch to night"></button>
   <button id="beat" class="pill beat" type="button" aria-pressed="false" aria-label="Play music"><span class="bars" aria-hidden="true"><i></i><i></i><i></i><i></i></span><span class="beat-label" id="beatLabel">Music</span></button>
@@ -368,6 +379,20 @@
       <h2>Fuelled by coffee, driven by designs.</h2>
       <p>I take products from ambiguity to shipped experience, across fintech, e-commerce, SaaS and luxury retail. This is my corner: every record on the wall is a project.</p>
       <p class="cue">Scroll to pour the story ↓</p>
+    </div>
+  </section>
+  <section class="ch" data-shot="coffee" id="ch-coffee">
+    <div class="card">
+      <p class="eyebrow">First things first</p>
+      <h2>But first, coffee.</h2>
+      <p>The espresso machine pulls a shot before the story starts.</p>
+    </div>
+  </section>
+  <section class="ch" data-shot="hello" id="ch-hello">
+    <div class="card">
+      <p class="eyebrow">Anand Patil · Product designer · 9+ years</p>
+      <h2>Hello, I’m Anand.</h2>
+      <p>I take products from ambiguity to shipped experience, across fintech, e-commerce, SaaS and luxury retail. Every record on the wall is a project.</p>
     </div>
   </section>
   <section class="ch" data-shot="about" id="ch-about">
@@ -1170,20 +1195,36 @@
       const e = g.createLinearGradient(0, 0, w, h); e.addColorStop(0, 'rgba(255,255,255,0.12)'); e.addColorStop(1, 'rgba(0,0,0,0.06)'); g.fillStyle = e; g.fillRect(0, 0, w, h);
     });
   }
-  function makeNote(front, back, pos, rz) {
-    const W = 1.9, H = 1.31;
+  function makeNote(front, back, pos, rz, opt) {
+    opt = opt || {};
+    const W = opt.w || 1.9, H = opt.h || 1.31;
     const ft = noteFace(front), bt = noteFace(back), edge = cardStock({ color: '#efe6d2' });
     const fm = cardStock({ map: ft, emissive: 0xffffff, emissiveMap: ft, emissiveIntensity: 0 });
     const bm = cardStock({ map: bt, emissive: 0xffffff, emissiveMap: bt, emissiveIntensity: 0 });
     const g = new THREE.Group(); g.add(new THREE.Mesh(new THREE.BoxGeometry(W, H, 0.02), [edge, edge, edge, edge, fm, bm]));
     const tape = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.13, 0.005), new THREE.MeshPhongMaterial({ color: '#e8dcbe', transparent: true, opacity: 0.85, shininess: 30 }));
-    tape.position.set(0, H / 2 - 0.02, 0.014); tape.rotation.z = 0.05; g.add(tape);
+    tape.position.set(0, H / 2 - 0.02, 0.014); tape.rotation.z = 0.05; if (!opt.noTape) g.add(tape);
     shadowy(g); scene.add(g);
-    const home = { pos: new THREE.Vector3(pos[0], pos[1], 0.04), rot: new THREE.Euler(0, 0, rz), scale: 1 };
+    const home = { pos: new THREE.Vector3(pos[0], pos[1], opt.z || 0.04), rot: new THREE.Euler(opt.rx || 0, 0, rz), scale: 1 };
     g.position.copy(home.pos); g.rotation.copy(home.rot);
     g.userData.home = home; g.userData.w = W; g.userData.h = H; g.userData.faces = [fm, bm];
     return g;
   }
+
+  const introNote = makeNote((g, w, h) => {
+    g.fillStyle = '#0033a6'; g.font = '600 30px "Hanken Grotesk", sans-serif'; g.fillText('PRODUCT DESIGNER · 9+ YEARS', 72, 100);
+    g.fillStyle = '#c4562b'; g.font = '600 58px Caveat, cursive'; g.fillText('hello, I’m', 72, 230);
+    if (signImg) g.drawImage(tinted(signImg, '#1e1a16', 560, 354), 120, 230);
+    g.fillStyle = '#6d5c47'; g.font = '600 40px Caveat, cursive'; g.fillText('turn me over ↻', w - 330, h - 60);
+  }, (g, w, h) => {
+    g.fillStyle = '#0033a6'; g.font = '600 26px "Hanken Grotesk", sans-serif'; g.fillText('HELLO THERE', 70, 96);
+    g.fillStyle = '#1e1a16'; g.font = 'italic 400 96px "Instrument Serif", serif'; g.fillText('I’m Anand.', 66, 210);
+    g.fillStyle = '#3a3128'; g.font = '400 36px "Hanken Grotesk", sans-serif';
+    let y = wrapText(g, 'I take products from ambiguity to shipped experience, across fintech, e-commerce, SaaS and luxury retail.', 70, 300, w - 150, 50) + 24;
+    g.fillStyle = '#1e1a16'; g.font = '500 34px "Hanken Grotesk", sans-serif';
+    wrapText(g, 'This is my corner. Every record on the wall is a project. Keep scrolling and each one comes off the shelf.', 70, y, w - 150, 48);
+    g.fillStyle = '#c4562b'; g.font = '600 44px Caveat, cursive'; g.fillText('fuelled by coffee, driven by designs', 70, h - 60);
+  }, [-2.78, TOP + 0.31], 0.02, { w: 0.86, h: 0.59, z: 0.34, rx: -0.16, noTape: true });
   const skillsNote = makeNote((g, w, h) => {
     g.fillStyle = '#0033a6'; g.font = '600 26px "Hanken Grotesk", sans-serif'; g.fillText('WHAT’S IN THE MUGS', 70, 96);
     g.fillStyle = '#1e1a16'; g.font = 'italic 400 120px "Instrument Serif", serif'; g.fillText('What I bring', 66, 300); g.fillText('to the table.', 66, 430);
@@ -1204,6 +1245,7 @@
   }, [-6.6, 7.55], 0.05);
   const readOn = () => window.scrollBy({ top: window.innerHeight * 0.9, behavior: reduceMotion ? 'auto' : 'smooth' });
   clickable(skillsNote, 'What I bring', 'keep reading', readOn);
+  clickable(introNote, 'Hello', 'keep reading', readOn);
 
   /* ---------- wall-mounted records ---------- */
   function grooveTex(labelColor, text) {
@@ -1687,6 +1729,8 @@
   /* ---------- scroll story: chapters drive the camera ---------- */
   const SHOTS = {
     intro: { at: [0.1, 6.2, 0], h: 14.6, w: 13.2, yaw: 0, pitch: 0.02, night: 0, fit: 0.74 },
+    coffee: { at: [-3.9, TOP + 1.25, 0.9], h: 3.6, w: 4.2, yaw: 0.14, pitch: 0.1, night: 0 },
+    hello: { at: [-3.2, TOP + 0.75, 0.7], h: 3.0, w: 3.6, yaw: -0.08, pitch: 0.08, night: 0 },
     about: { at: [-3.7, 7.5, 0.3], h: 4.0, w: 4.8, yaw: -0.2, pitch: 0.04, night: 0 },
     bar: { at: [-2.7, 5.1, 0.8], h: 6.2, w: 7.6, yaw: 0.14, pitch: 0.09, night: 0.32 },
     contact: { at: [0.4, 6.3, 0], h: 14.6, w: 13.2, yaw: 0, pitch: 0.02, night: 1, fit: 0.74 }
@@ -1724,13 +1768,17 @@
   // which object each chapter pulls into focus
   const chObjects = chapters.map(c => {
     const sh = c.dataset.shot;
-    if (sh === 'intro') return null;
+    if (sh === 'intro' || sh === 'coffee') return null;
+    if (sh === 'hello') return introNote;
     if (sh === 'about') return albums[6];
     if (sh === 'bar') return skillsNote;
     if (sh === 'contact') return albums[8];
     return albums[+c.dataset.rec];
   });
-  const focusables = [skillsNote, ...albums];
+  const focusables = [introNote, skillsNote, ...albums];
+  const bfEl = document.getElementById('butfirst'), bfSub = document.getElementById('bfSub');
+  let bfOn = false, userGestured = false;
+  ['pointerdown', 'keydown', 'touchstart'].forEach(ev => window.addEventListener(ev, () => { userGestured = true; }, { once: true, passive: true }));
   const ctaEl = document.getElementById('cta');
   let ctaFor = -1, ctaShown = false;
   function ctaButton(label, onClick, primary) { const b = document.createElement('button'); b.type = 'button'; b.className = 'pill' + (primary ? ' primary' : ''); b.textContent = label; b.addEventListener('click', onClick); return b; }
@@ -2011,6 +2059,12 @@
     canvas.classList.toggle('can-click', !!hovered || (fAmt > 0.6 && flipT > 0.6));
     if (showCta !== ctaShown) { ctaShown = showCta; ctaEl.classList.toggle('off', !showCta); }
     // the turntable follows along once something is already playing
+    const coffeeOn = chapters[fi].dataset.shot === 'coffee' && Math.abs(u) < 0.36;
+    if (coffeeOn !== bfOn) {
+      bfOn = coffeeOn; bfEl.classList.toggle('on', coffeeOn);
+      if (coffeeOn && brew.t < 0) { brew.t = 0; brew.level = 0; bfSub.textContent = 'pulling a shot…'; if (userGestured) SFX.pump(3.4); }
+    }
+    if (bfOn && brew.t > 3.3 && bfSub.textContent !== 'ahh. now, hello.') bfSub.textContent = 'ahh. now, hello.';
     const fRec = fObj && fObj.userData.rec;
     if (fRec && deck.playing && deck.rec !== fRec && fAmt > 0.8 && chapters[fi].dataset.rec != null) playRecord(fRec);
     focusables.forEach(a => {
