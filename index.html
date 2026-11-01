@@ -207,6 +207,9 @@
   .pl-now b { font: italic 400 20px var(--font-display); display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .pl-now small { color: #6d5c47; }
   .pl-now > div { min-width: 0; }
+  .pl-spotify { display: flex; flex-direction: column; gap: 6px; }
+  .pl-spotify small { font-size: 11.5px; letter-spacing: 0.08em; text-transform: uppercase; color: #6d5c47; }
+  .pl-spotify iframe { width: 100%; height: 152px; border: 0; border-radius: 12px; display: block; background: #1e1a16; }
   .pl-close { position: fixed; z-index: 4; top: calc(18px + env(safe-area-inset-top, 0px)); left: max(16px, env(safe-area-inset-left, 0px)); }
   .deck-btn { padding: 11px 18px 11px 13px; }
   .deck-btn svg { width: 22px; height: 22px; flex: none; }
@@ -417,8 +420,10 @@
   <div class="pl-actions">
     <label class="pill" for="plFile">Play your own song</label>
     <input type="file" id="plFile" accept="audio/*" hidden>
-    <button class="pill" type="button" disabled title="Spotify support is on the way">Connect Spotify · soon</button>
+    <button class="pill" type="button" id="plSpotifySoon" disabled title="My playlist is on the way">My Spotify playlist · soon</button>
+    <a class="pill" id="plSpotifyOpen" target="_blank" rel="noopener" hidden>Open in Spotify ↗</a>
   </div>
+  <div class="pl-spotify" id="plSpotify" hidden><small>From my Spotify</small></div>
   <div class="pl-now"><div><small>On the platter</small><b id="plNow">Nothing yet</b></div><button class="pill primary" type="button" id="plToggle">Play</button></div>
 </section>
 <main id="story">
@@ -496,15 +501,6 @@
       <p>A Figma plugin that audits a design system, flags violations against tokens and auto-fixes them before handoff.</p>
       <dl class="meta"><dt>Type</dt><dd>Figma plugin</dd><dt>Built with</dt><dd>Figma API · TypeScript</dd><dt>Year</dt><dd>2024</dd></dl>
       <div class="row"><button class="btn primary" type="button" data-open="design-cop">Open case study</button></div>
-    </div>
-  </section>
-  <section class="ch" data-shot="about" id="ch-about">
-    <div class="card">
-      <p class="eyebrow">About me</p>
-      <h2>Hello there.</h2>
-      <p>I specialise in 0→1 journeys, turning ambiguity into structured, scalable systems. I care about craft: the design token that keeps a system honest, the flow that removes friction, the interaction that feels inevitable.</p>
-      <dl class="meta"><dt>Now</dt><dd>Qween, building design systems and immersive product experiences</dd><dt>Before</dt><dd>PhonePe, Lollypop Design, Fractal Ink</dd></dl>
-      <div class="row"><button class="btn" type="button" data-open="about">More about me</button></div>
     </div>
   </section>
   <section class="ch" data-shot="bar" id="ch-bar">
@@ -926,6 +922,13 @@
     }
     g.computeVertexNormals(); return g;
   }
+  // an open cup turned on a lathe: outer wall, a rolled rim, inner wall and a floor, so whatever is inside shows
+  function cupGeo(rTop, rBot, h, wall) {
+    const pts = [[0, 0], [rBot - 0.01, 0], [rBot, 0.012], [rTop, h - 0.008], [rTop + 0.004, h], [rTop - wall, h], [rTop - wall - 0.002, h - 0.01], [rBot - wall + 0.004, wall + 0.02], [rBot - wall - 0.01, wall], [0, wall]];
+    return new THREE.LatheGeometry(pts.map(([x, y]) => new THREE.Vector2(x, y)), 48);
+  }
+  // inner radius of that cup at a height above its base, for sizing the liquid inside
+  const cupInner = (rTop, rBot, h, wall, y) => { const y0 = wall + 0.02, y1 = h - 0.01, r0 = rBot - wall + 0.004, r1 = rTop - wall - 0.002; return r0 + (r1 - r0) * Math.min(1, Math.max(0, (y - y0) / (y1 - y0))); };
   const _bx = new THREE.Vector3(), _by = new THREE.Vector3(), _bz = new THREE.Vector3(), _bm = new THREE.Matrix4();
   // orient an object so its +y runs along dir and its face (+z) leans toward `face`
   function orientAlong(obj, dir, face) {
@@ -1569,12 +1572,33 @@
   // the cup on the drip tray, on a saucer
   const cup = new THREE.Group(); cup.position.set(-0.15, 0.365, 0.38); espresso.add(cup);
   cyl(0.24, 0.2, 0.025, ceramic('#f6f1e6'), 0, 0.012, 0, cup, 32);
-  cyl(0.17, 0.12, 0.24, ceramic('#f6f1e6'), 0, 0.145, 0, cup, 32);
+  const cupBody = new THREE.Mesh(cupGeo(0.17, 0.12, 0.24, 0.012), ceramic('#f6f1e6', { side: THREE.DoubleSide })); cupBody.position.y = 0.025; cupBody.castShadow = cupBody.receiveShadow = true; cup.add(cupBody);
   const cupHandle = new THREE.Mesh(new THREE.TorusGeometry(0.07, 0.024, 8, 18), ceramic('#f6f1e6')); cupHandle.position.set(0.19, 0.155, 0); cup.add(cupHandle);
-  const crema = cyl(0.155, 0.155, 0.01, new THREE.MeshPhongMaterial({ color: '#a8683a', map: speckTex, bumpMap: speckTex, bumpScale: 0.004, shininess: 60, specular: 0x553322 }), 0, 0.07, 0, cup, 24); crema.visible = false;
-  const stream = cyl(0.016, 0.012, 0.5, lambert('#5a3418', { transparent: true, opacity: 0.9 }), 0, 0.5, 0, cup, 8); stream.visible = false; stream.castShadow = false;
+  // crema: mottled tiger-striping that starts dark and turns hazelnut as the cup fills
+  const cremaTex = canvasTex(256, 256, (c, w) => {
+    const g = c.createRadialGradient(w * 0.46, w * 0.44, 6, w / 2, w / 2, w / 2); g.addColorStop(0, '#e2b27a'); g.addColorStop(0.55, '#c08a52'); g.addColorStop(1, '#7a4a24');
+    c.fillStyle = g; c.fillRect(0, 0, w, w);
+    for (let i = 0; i < 900; i++) { c.fillStyle = 'rgba(' + (Math.random() > 0.55 ? '90,48,18' : '245,215,170') + ',' + (Math.random() * 0.22).toFixed(2) + ')'; c.beginPath(); c.ellipse(Math.random() * w, Math.random() * w, 2 + Math.random() * 7, 1 + Math.random() * 3, Math.random() * 3, 0, Math.PI * 2); c.fill(); }
+  });
+  const cremaMat = new THREE.MeshPhongMaterial({ color: '#3a1d0a', map: cremaTex, bumpMap: cremaTex, bumpScale: 0.003, shininess: 70, specular: 0x6a4020 });
+  const crema = cyl(0.155, 0.155, 0.006, cremaMat, 0, 0.07, 0, cup, 32); crema.visible = false; crema.castShadow = false;
+  const ripple = new THREE.Mesh(new THREE.RingGeometry(0.02, 0.032, 24), new THREE.MeshBasicMaterial({ color: '#e8c290', transparent: true, opacity: 0, depthWrite: false }));
+  ripple.rotation.x = -Math.PI / 2; cup.add(ripple);
+  // the streams: thin, glossy, slightly tapered, with a flowing texture; one under each spout
+  const flowTex = canvasTex(16, 256, (c, w, h) => {
+    c.fillStyle = '#2a1406'; c.fillRect(0, 0, w, h);
+    for (let y = 0; y < h; y += 2) { c.fillStyle = 'rgba(' + (Math.random() > 0.5 ? '170,104,50' : '20,8,2') + ',' + (Math.random() * 0.5).toFixed(2) + ')'; c.fillRect(Math.random() * w * 0.6, y, 3 + Math.random() * 6, 2); }
+  });
+  flowTex.wrapS = flowTex.wrapT = THREE.RepeatWrapping;
+  const streamMat = new THREE.MeshPhongMaterial({ color: '#ffffff', map: flowTex, specular: 0x9a6a3a, shininess: 110, transparent: true, opacity: 0.95 });
+  const streamGeo = new THREE.CylinderGeometry(1, 0.75, 1, 10, 1, true); streamGeo.translate(0, -0.5, 0);
+  const streams = [-0.05, 0.05].map(dx => {
+    const m = new THREE.Mesh(streamGeo, streamMat); m.position.set(-0.15 + dx, 1.12, 0.39); m.visible = false; m.userData.dx = dx; espresso.add(m); return m;
+  });
+  const drops = Array.from({ length: 8 }, () => { const d = new THREE.Mesh(new THREE.SphereGeometry(0.011, 8, 6), streamMat); d.visible = false; d.scale.y = 1.6; espresso.add(d); return d; });
+  let dropClock = 0;
   shadowy(espresso);
-  const brew = { t: -1, level: 0 };
+  const brew = { t: -1, level: 0, cool: 0 };
   clickable(espresso, 'Espresso machine', 'pull a shot', () => { toast('Fuelled by coffee', 'driven by designs'); if (brew.t >= 0) return; brew.t = 0; brew.level = 0; SFX.pump(3.4); });
 
   /* ---------- grinder ---------- */
@@ -1733,7 +1757,9 @@
     for (let i = 0; i < leaves; i++) {
       // arching stem from the soil, a curved leaf at its tip facing up and out toward the room
       const a = (i / leaves) * Math.PI * 2 + Math.random() * 0.5, hgt = potH + 0.9 + Math.random() * spread;
-      const reach = 0.35 + Math.random() * 0.95, lx = Math.cos(a) * reach, lz = Math.sin(a) * reach * 0.55 + 0.1;
+      const reach = 0.35 + Math.random() * 0.95, lz = Math.sin(a) * reach * 0.55 + 0.1;
+      // leaves never reach in front of the credenza, so nothing hides the coffee bar
+      const lx = x < 0 ? Math.min(Math.cos(a) * reach, 0.35) : Math.max(Math.cos(a) * reach, -0.35);
       const from = new THREE.Vector3(Math.cos(a) * 0.12, potH - 0.04, Math.sin(a) * 0.08), to = new THREE.Vector3(lx, hgt, lz);
       const mid = new THREE.Vector3(lx * 0.25, hgt * 0.82, lz * 0.25);
       const curve = new THREE.QuadraticBezierCurve3(from, mid, to);
@@ -1752,6 +1778,140 @@
   const wovenTex = canvasTex(256, 128, (c, w, h) => { c.fillStyle = '#b08850'; c.fillRect(0, 0, w, h); for (let y = 0; y < h; y += 8) for (let x = (y / 8 % 2) * 8; x < w; x += 16) { c.fillStyle = 'rgba(80,50,20,0.45)'; c.fillRect(x, y, 8, 8); } });
   floorPlant(-6.1, 1.2, new THREE.MeshPhongMaterial({ map: wovenTex, bumpMap: wovenTex, bumpScale: 0.05, specular: 0x111111, shininess: 6 }), 1.4, 15, 2.5, 1.0);
 
+
+  /* ---------- the bistro corner to the right: a café table for two, where "let's talk" lives ---------- */
+  const tickers = [];
+  const BX = 9.4, BZ = 1.75, TABLE_H = 3.0;
+  const iron = metal('#1d1b19', { map: null, bumpMap: null, shininess: 50, reflectivity: 0.08, specular: 0x333333 });
+  const bistro = new THREE.Group(); scene.add(bistro);
+  // jute rug
+  const juteTex = canvasTex(512, 512, (c, w, h) => {
+    c.fillStyle = '#b89a6a'; c.fillRect(0, 0, w, h);
+    for (let y = 0; y < h; y += 6) for (let x = (y / 6 % 2) * 6; x < w; x += 12) { c.fillStyle = 'rgba(' + (Math.random() > 0.5 ? '90,66,34' : '220,196,150') + ',' + (0.25 + Math.random() * 0.25).toFixed(2) + ')'; c.fillRect(x, y, 7, 4); }
+    c.strokeStyle = 'rgba(80,58,30,0.5)'; c.lineWidth = 10; c.strokeRect(14, 14, w - 28, h - 28);
+  });
+  const jute = new THREE.Mesh(new THREE.PlaneGeometry(6.6, 4.2), new THREE.MeshPhongMaterial({ map: juteTex, bumpMap: juteTex, bumpScale: 0.04, shininess: 2, specular: 0x050505 }));
+  jute.rotation.x = -Math.PI / 2; jute.position.set(BX, 0.012, BZ + 0.5); jute.receiveShadow = true; bistro.add(jute);
+  // round walnut top on a black pedestal
+  const tableTop = satinWood(woodTex('#6e3d1c', '#2a1306'), { shininess: 55, specular: 0x3a2a1a });
+  cyl(1.2, 1.18, 0.12, tableTop, BX, TABLE_H - 0.06, BZ, bistro, 64);
+  cyl(1.16, 1.12, 0.04, satinWood(woodTex('#5a3014', '#1e0e04'), { shininess: 30 }), BX, TABLE_H - 0.14, BZ, bistro, 64);
+  cyl(0.32, 0.32, 0.08, iron, BX, TABLE_H - 0.2, BZ, bistro, 32);
+  cyl(0.085, 0.1, TABLE_H - 0.3, iron, BX, (TABLE_H - 0.3) / 2 + 0.06, BZ, bistro, 24);
+  cyl(0.78, 0.82, 0.08, iron, BX, 0.04, BZ, bistro, 48);
+  cyl(0.5, 0.78, 0.05, iron, BX, 0.1, BZ, bistro, 48);
+  // two bentwood chairs with cane seats, turned toward the table
+  const caneTex = canvasTex(256, 256, (c, w, h) => {
+    c.fillStyle = '#5a3e1e'; c.fillRect(0, 0, w, h);
+    c.strokeStyle = '#d8b878'; c.lineWidth = 3;
+    for (let k = -h; k < w + h; k += 10) { c.beginPath(); c.moveTo(k, 0); c.lineTo(k + h, h); c.stroke(); c.beginPath(); c.moveTo(k + h, 0); c.lineTo(k, h); c.stroke(); }
+    c.lineWidth = 2.5; for (let x = 0; x < w; x += 10) { c.beginPath(); c.moveTo(x, 0); c.lineTo(x, h); c.stroke(); } for (let y = 0; y < h; y += 10) { c.beginPath(); c.moveTo(0, y); c.lineTo(w, y); c.stroke(); }
+  });
+  caneTex.wrapS = caneTex.wrapT = THREE.RepeatWrapping; caneTex.repeat.set(3, 3);
+  const caneMat = new THREE.MeshPhongMaterial({ map: caneTex, bumpMap: caneTex, bumpScale: 0.02, shininess: 20, specular: 0x2a2010 });
+  const bentwood = new THREE.MeshPhongMaterial({ color: '#141210', shininess: 70, specular: 0x444444 });
+  function tube(points, r, mat, parent) { const m = new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(points.map(p => new THREE.Vector3(p[0], p[1], p[2]))), 40, r, 8, false), mat); m.castShadow = m.receiveShadow = true; parent.add(m); return m; }
+  function chair(x, z, ry) {
+    const g = new THREE.Group(); g.position.set(x, 0, z); g.rotation.y = ry; bistro.add(g);
+    const SEAT = 1.8, R = 0.78;
+    cyl(R, R, 0.09, caneMat, 0, SEAT, 0, g, 48);
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(R, 0.055, 10, 48), bentwood); ring.rotation.x = Math.PI / 2; ring.position.y = SEAT - 0.03; g.add(ring);
+    const knee = new THREE.Mesh(new THREE.TorusGeometry(0.62, 0.032, 8, 40), bentwood); knee.rotation.x = Math.PI / 2; knee.position.y = 0.72; g.add(knee);
+    [[0.6, 0.52], [-0.6, 0.52], [0.55, -0.55], [-0.55, -0.55]].forEach(([lx, lz]) => tube([[lx * 0.95, SEAT - 0.05, lz * 0.95], [lx * 1.02, SEAT * 0.5, lz * 1.02], [lx * 1.12, 0.02, lz * 1.12]], 0.045, bentwood, g));
+    // the bentwood back: an outer hoop and a smaller inner loop
+    tube([[-0.58, SEAT, -0.5], [-0.66, SEAT + 0.8, -0.66], [-0.5, SEAT + 1.45, -0.78], [0, SEAT + 1.62, -0.82], [0.5, SEAT + 1.45, -0.78], [0.66, SEAT + 0.8, -0.66], [0.58, SEAT, -0.5]], 0.05, bentwood, g);
+    tube([[-0.34, SEAT + 0.35, -0.66], [-0.42, SEAT + 0.95, -0.74], [0, SEAT + 1.25, -0.8], [0.42, SEAT + 0.95, -0.74], [0.34, SEAT + 0.35, -0.66]], 0.035, bentwood, g);
+    return g;
+  }
+  chair(BX - 1.95, BZ + 0.15, Math.PI / 2 - 0.25);
+  chair(BX + 1.95, BZ + 0.15, -Math.PI / 2 + 0.25);
+  // framed abstract print on the wall
+  const printTex = canvasTex(512, 700, (c, w, h) => {
+    c.fillStyle = '#f2ebde'; c.fillRect(0, 0, w, h); speckle(c, w, h, 0.05, 4000);
+    c.fillStyle = '#1f3a2c'; c.beginPath(); c.moveTo(110, 360); c.bezierCurveTo(60, 160, 200, 70, 330, 110); c.bezierCurveTo(440, 150, 430, 300, 360, 360); c.closePath(); c.fill();
+    c.fillStyle = '#e9dcc4'; c.beginPath(); c.arc(330, 420, 110, 0, Math.PI * 2); c.fill();
+    c.fillStyle = '#b8402f'; c.beginPath(); c.moveTo(120, 600); c.lineTo(120, 430); c.bezierCurveTo(200, 400, 300, 470, 330, 600); c.closePath(); c.fill();
+    c.strokeStyle = 'rgba(30,26,22,0.12)'; c.lineWidth = 2; c.strokeRect(40, 40, w - 80, h - 80);
+  });
+  const darkFrame = satinWood(woodTex('#3a2414', '#140a04'), { shininess: 45 });
+  box(2.0, 2.75, 0.09, [darkFrame, darkFrame, darkFrame, darkFrame, new THREE.MeshPhongMaterial({ map: printTex, shininess: 70, specular: 0x444444, envMap: envTex, reflectivity: 0.05, combine: THREE.MixOperation }), darkFrame], BX - 1.75, 7.0, 0.06, bistro);
+  // brass pendant over the table
+  const shadeMetal = warmMetal('#5c5a2c', { shininess: 90 });
+  cyl(0.012, 0.012, 14 - 7.6, iron, BX, (14 + 7.6) / 2, BZ, bistro, 6);
+  cyl(0.07, 0.09, 0.22, shadeMetal, BX, 7.55, BZ, bistro, 20);
+  const pShade = new THREE.Mesh(new THREE.SphereGeometry(0.72, 40, 20, 0, Math.PI * 2, 0, Math.PI / 2), shadeMetal);
+  pShade.material = shadeMetal.clone(); pShade.material.side = THREE.DoubleSide; pShade.scale.y = 0.85; pShade.position.set(BX, 6.85, BZ); pShade.castShadow = true; bistro.add(pShade);
+  const pBulb = new THREE.Mesh(new THREE.SphereGeometry(0.16, 20, 12), new THREE.MeshBasicMaterial({ color: '#fff1d0' })); pBulb.position.set(BX, 6.86, BZ); bistro.add(pBulb);
+  const pGlow = glow('#ffb35c', 2.4); pGlow.position.set(BX, 6.7, BZ); bistro.add(pGlow);
+  const bistroLight = new THREE.PointLight(0xffb469, 0.3, 14, 1.4); bistroLight.position.set(BX, 6.4, BZ); scene.add(bistroLight);
+  // a dark floating shelf with a trailing plant and a candlestick
+  box(3.0, 0.11, 0.5, darkFrame, BX + 1.7, 6.6, 0.25, bistro);
+  cyl(0.06, 0.1, 0.9, warmMetal('#5c5a2c'), BX + 0.7, 7.1, 0.25, bistro, 20);
+  cyl(0.1, 0.12, 0.05, warmMetal('#5c5a2c'), BX + 0.7, 6.68, 0.25, bistro, 20);
+  cyl(0.26, 0.2, 0.42, ceramic('#b4643c', { map: null, shininess: 30, reflectivity: 0.04 }), BX + 2.2, 6.86, 0.25, bistro, 28);
+  for (let i = 0; i < 16; i++) { const a = Math.random() * Math.PI * 2; leafAt(BX + 2.2 + Math.cos(a) * (0.08 + Math.random() * 0.3), 7.1 + Math.random() * 0.35, 0.25 + Math.sin(a) * 0.18, 0.9 + Math.random() * 0.4, Math.random() * 6, bistro); }
+  [[BX + 2.0, 2.4, 0.5], [BX + 2.45, 1.6, 0.45], [BX + 1.8, 1.2, 0.4]].forEach(([x, len, z]) => {
+    const g = new THREE.Group(); g.position.set(x, 6.6, z); bistro.add(g);
+    const n = Math.round(len * 6);
+    for (let k = 0; k < n; k++) { const t = k / n; leafAt(Math.sin(t * 3) * 0.1 + (k % 2 ? 0.07 : -0.07), -t * len, Math.sin(t * 2) * 0.05, 0.75 + Math.random() * 0.3, (k % 2 ? -0.5 : 0.5) + Math.PI, g); }
+    g.userData.ph = Math.random() * 6; vines.push(g);
+  });
+  // on the table: brass candlesticks, a glass of greenery, a cup on a plate
+  const brassC = warmMetal('#c59a4e', { shininess: 110 });
+  const candleMat = new THREE.MeshPhongMaterial({ color: '#f6efdf', emissive: new THREE.Color('#ffcf8a'), emissiveIntensity: 0.08, shininess: 30 });
+  const flames = [];
+  [[BX - 0.55, BZ - 0.3, 0.95], [BX - 0.3, BZ - 0.52, 0.65]].forEach(([x, z, hgt]) => {
+    cyl(0.12, 0.14, 0.04, brassC, x, TABLE_H + 0.02, z, bistro, 24);
+    cyl(0.035, 0.05, hgt, brassC, x, TABLE_H + hgt / 2, z, bistro, 16);
+    cyl(0.06, 0.05, 0.06, brassC, x, TABLE_H + hgt + 0.02, z, bistro, 16);
+    cyl(0.045, 0.045, 0.45, candleMat, x, TABLE_H + hgt + 0.27, z, bistro, 16);
+    const fl = new THREE.Mesh(new THREE.ConeGeometry(0.03, 0.11, 10), new THREE.MeshBasicMaterial({ color: '#ffd38a' }));
+    fl.position.set(x, TABLE_H + hgt + 0.56, z); bistro.add(fl);
+    const fg = glow('#ffb04a', 0.6); fg.position.copy(fl.position); bistro.add(fg);
+    flames.push([fl, fg]);
+  });
+  const vase = cyl(0.2, 0.17, 0.75, glassMat('#e8f2ee', 0.24), BX - 0.05, TABLE_H + 0.375, BZ - 0.45, bistro, 32); vase.castShadow = false;
+  cyl(0.18, 0.16, 0.35, new THREE.MeshPhongMaterial({ color: '#cfe0d4', transparent: true, opacity: 0.35, depthWrite: false, shininess: 100 }), BX - 0.05, TABLE_H + 0.19, BZ - 0.45, bistro, 24);
+  const twigMat = new THREE.MeshPhongMaterial({ color: '#5a6a34', shininess: 20 });
+  for (let k = 0; k < 7; k++) {
+    const a = k / 7 * Math.PI * 2, top = [BX - 0.05 + Math.cos(a) * (0.35 + Math.random() * 0.3), TABLE_H + 1.3 + Math.random() * 0.6, BZ - 0.45 + Math.sin(a) * 0.25];
+    tube([[BX - 0.05, TABLE_H + 0.1, BZ - 0.45], [BX - 0.05 + Math.cos(a) * 0.08, TABLE_H + 0.8, BZ - 0.45 + Math.sin(a) * 0.05], top], 0.012, twigMat, bistro);
+    for (let j = 0; j < 4; j++) { const t = 0.55 + j * 0.13; leafAt(THREE.MathUtils.lerp(BX - 0.05, top[0], t) + (j % 2 ? 0.05 : -0.05), THREE.MathUtils.lerp(TABLE_H + 0.8, top[1], t), THREE.MathUtils.lerp(BZ - 0.45, top[2], t), 0.42, (j % 2 ? 0.8 : -0.8), bistro); }
+  }
+  cyl(0.42, 0.36, 0.03, ceramic('#2b2f2e', { map: null, shininess: 60 }), BX + 0.45, TABLE_H + 0.015, BZ - 0.25, bistro, 40);
+  cyl(0.26, 0.22, 0.025, ceramic('#f6f1e6'), BX + 0.45, TABLE_H + 0.04, BZ - 0.25, bistro, 32);
+  const bCup = new THREE.Mesh(cupGeo(0.19, 0.13, 0.22, 0.012), ceramic('#f6f1e6', { side: THREE.DoubleSide })); bCup.position.set(BX + 0.45, TABLE_H + 0.055, BZ - 0.25); bistro.add(bCup);
+  const bh = new THREE.Mesh(new THREE.TorusGeometry(0.075, 0.024, 8, 18), ceramic('#f6f1e6')); bh.position.set(BX + 0.66, TABLE_H + 0.18, BZ - 0.25); bistro.add(bh);
+  cyl(1, 1, 0.006, new THREE.MeshPhongMaterial({ color: '#ffffff', map: cremaTex, shininess: 80, specular: 0x6a4020 }), BX + 0.45, TABLE_H + 0.055 + 0.17, BZ - 0.25, bistro, 32).scale.set(cupInner(0.19, 0.13, 0.22, 0.012, 0.17) - 0.001, 1, cupInner(0.19, 0.13, 0.22, 0.012, 0.17) - 0.001);
+  shadowy(bistro); jute.castShadow = false; pBulb.castShadow = false;
+  // the "let's talk" placard, propped in a little wooden stand at the front of the table
+  box(0.6, 0.07, 0.14, satinWood(woodTex('#8c5129', '#3b1d0c', 256, 128), { shininess: 40 }), BX - 0.1, TABLE_H + 0.035, BZ + 0.62, bistro);
+  const contactNote = makeNote((g, w, h) => {
+    g.fillStyle = '#0033a6'; g.font = '600 28px "Hanken Grotesk", sans-serif'; g.fillText('RESERVED FOR YOU', 72, 100);
+    g.fillStyle = '#1e1a16'; g.font = 'italic 400 168px "Instrument Serif", serif'; g.fillText('Let’s talk.', 64, 330);
+    g.fillStyle = '#3a3128'; g.font = '400 34px "Hanken Grotesk", sans-serif'; g.fillText('Senior & Staff product design roles · Europe', 72, 420);
+    if (signImg) g.drawImage(tinted(signImg, '#0033a6', 260, 165), w - 320, h - 230);
+    g.fillStyle = '#c4562b'; g.font = '600 46px Caveat, cursive'; g.fillText('turn me over for coffee ↻', 72, h - 70);
+  }, (g, w, h) => {
+    g.fillStyle = '#0033a6'; g.font = '600 26px "Hanken Grotesk", sans-serif'; g.fillText('GET IN TOUCH', 70, 96);
+    g.fillStyle = '#1e1a16'; g.font = 'italic 400 92px "Instrument Serif", serif'; g.fillText('Coffee’s on me.', 66, 206);
+    g.fillStyle = '#3a3128'; g.font = '400 34px "Hanken Grotesk", sans-serif';
+    wrapText(g, 'If you’re building something where design has to reach into the product, I’d like to hear about it.', 70, 280, w - 150, 48);
+    [['EMAIL', 'anandpatil19594@gmail.com'], ['CALL', '30 minutes on Calendly'], ['ELSEWHERE', 'LinkedIn · Résumé']].forEach(([k, v], i) => {
+      const y = 450 + i * 56; g.fillStyle = '#8a7860'; g.font = '600 22px "Hanken Grotesk", sans-serif'; g.fillText(k, 70, y);
+      g.fillStyle = '#1e1a16'; g.font = '500 32px "Hanken Grotesk", sans-serif'; g.fillText(v, 270, y);
+    });
+    g.fillStyle = '#c4562b'; g.font = '600 40px Caveat, cursive'; g.fillText('always brewing something new', 70, h - 36);
+  }, [BX - 0.1, TABLE_H + 0.07 + 0.3], 0, { w: 1.0, h: 0.69, z: BZ + 0.6, rx: -0.2, noTape: true });
+  contactNote.position.y = TABLE_H + 0.07 + 0.69 / 2 * Math.cos(0.2); contactNote.userData.home.pos.y = contactNote.position.y;
+  contactNote.userData.inPlace = true; // read where it stands: the camera comes to the table instead
+  clickable(contactNote, 'Let’s talk', 'get in touch', () => openCase('contact', true));
+  tickers.push((t, night) => {
+    bistroLight.intensity = THREE.MathUtils.lerp(0.3, 1.9, night);
+    pGlow.material.opacity = THREE.MathUtils.lerp(0.25, 0.85, night);
+    flames.forEach(([fl, fg], i) => { const f = 0.85 + Math.sin(t * 13 + i * 2) * 0.08 + Math.sin(t * 29 + i) * 0.05; fl.scale.set(1, f, 1); fg.material.opacity = THREE.MathUtils.lerp(0.35, 0.9, night) * f; });
+  });
+
   /* ---------- dust in the sunbeam, steam, drips ---------- */
   const MOTES = 160, motePos = new Float32Array(MOTES * 3), moteSeed = [];
   for (let i = 0; i < MOTES; i++) { motePos[i * 3] = 0.5 + Math.random() * 7; motePos[i * 3 + 1] = 2 + Math.random() * 10; motePos[i * 3 + 2] = 0.4 + Math.random() * 6; moteSeed.push(Math.random() * 10); }
@@ -1759,11 +1919,22 @@
   const moteMat = new THREE.PointsMaterial({ color: 0xffe2b0, size: 0.045, map: puffTex, transparent: true, opacity: 0.7, depthWrite: false, blending: THREE.AdditiveBlending });
   const motes = new THREE.Points(moteGeo, moteMat); motes.raycast = () => {}; scene.add(motes);
 
+  // three cloudy wisp textures, built from many soft blobs so no two puffs look alike
+  const steamTex = [0, 1, 2].map(seed => canvasTex(128, 128, (c, w) => {
+    for (let i = 0; i < 26; i++) {
+      const a = Math.random() * Math.PI * 2, r = Math.random() * w * 0.22, x = w / 2 + Math.cos(a) * r, y = w / 2 + Math.sin(a) * r * 1.4, br = w * (0.1 + Math.random() * 0.16);
+      const g = c.createRadialGradient(x, y, 0, x, y, br); g.addColorStop(0, 'rgba(255,255,255,0.22)'); g.addColorStop(1, 'rgba(255,255,255,0)');
+      c.fillStyle = g; c.fillRect(0, 0, w, w);
+    }
+  }));
   const puffs = [];
-  function puff(x, y, z, s) {
+  function puff(x, y, z, s, peak) {
     let p = puffs.find(q => !q.visible);
-    if (!p) { p = new THREE.Sprite(new THREE.SpriteMaterial({ map: puffTex, transparent: true, depthWrite: false, opacity: 0 })); p.raycast = () => {}; scene.add(p); puffs.push(p); }
-    p.visible = true; p.position.set(x, y, z); p.userData = { life: 0, max: 1.6 + Math.random(), s: s || 0.3, vx: (Math.random() - 0.5) * 0.15 }; return p;
+    if (!p) { p = new THREE.Sprite(new THREE.SpriteMaterial({ map: steamTex[0], color: 0xfff8ee, transparent: true, depthWrite: false, opacity: 0 })); p.raycast = () => {}; scene.add(p); puffs.push(p); }
+    p.material.map = steamTex[Math.floor(Math.random() * 3)]; p.material.rotation = Math.random() * Math.PI * 2;
+    p.visible = true; p.position.set(x, y, z);
+    p.userData = { life: 0, max: 2.2 + Math.random() * 1.6, s: s || 0.2, peak: peak || 0.25, vx: (Math.random() - 0.5) * 0.04, seed: Math.random() * 10, spin: (Math.random() - 0.5) * 0.6 };
+    return p;
   }
 
   /* ---------- the focus overlay for record sleeves ---------- */
@@ -1920,7 +2091,7 @@
     hello: { at: [-3.2, TOP + 0.75, 0.7], h: 3.0, w: 3.6, yaw: -0.08, pitch: 0.08, night: 0 },
     about: { at: [-3.7, 7.5, 0.3], h: 4.0, w: 4.8, yaw: -0.2, pitch: 0.04, night: 0 },
     bar: { at: [-2.98, 5.95, 0.4], h: 1.7, w: 3.4, yaw: 0, pitch: 0.02, night: 0.3 },
-    contact: { at: [0.4, 6.3, 0], h: 14.6, w: 13.2, yaw: 0, pitch: 0.02, night: 1, fit: 0.74 }
+    contact: { at: [9.3, 3.44, 2.3], h: 1.25, w: 1.55, yaw: 0.1, pitch: 0.2, night: 1 }
   };
   SLOTS.slice(0, 6).forEach(([x, y, sz], i) => { SHOTS['r' + i] = { at: [x, y + sz / 2 + 0.05, 0.4], h: 4.3, w: 4.6, yaw: i % 2 ? 0.12 : -0.12, pitch: 0.035, night: [0, 0.03, 0.07, 0.11, 0.16, 0.22][i] }; });
   const chapters = [...document.querySelectorAll('.ch')];
@@ -1959,10 +2130,10 @@
     if (sh === 'hello') return introNote;
     if (sh === 'about') return albums[6];
     if (sh === 'bar') return null;
-    if (sh === 'contact') return albums[8];
+    if (sh === 'contact') return contactNote;
     return albums[+c.dataset.rec];
   });
-  const focusables = [introNote, ...albums];
+  const focusables = [introNote, contactNote, ...albums];
   const bfEl = document.getElementById('butfirst'), bfSub = document.getElementById('bfSub');
   let bfOn = false, userGestured = false, barWaved = false;
   ['pointerdown', 'keydown', 'touchstart'].forEach(ev => window.addEventListener(ev, () => { userGestured = true; }, { once: true, passive: true }));
@@ -2025,7 +2196,7 @@
     plList.querySelectorAll('.pl-rec').forEach(b => b.classList.toggle('on', !!deck.rec && b.dataset.id === deck.rec.id));
   }
   function openPlayer() {
-    if (playerOn) return; buildPlayer(); playerOn = true; updatePlayerUI();
+    if (playerOn) return; buildPlayer(); playerOn = true; updatePlayerUI(); if (spotifyLoad) spotifyLoad();
     document.documentElement.classList.add('deck'); playerEl.hidden = false; plClose.hidden = false;
     requestAnimationFrame(() => playerEl.classList.add('open'));
     document.getElementById('tip').hidden = true; plClose.focus({ preventScroll: true });
@@ -2039,6 +2210,29 @@
   plToggle.addEventListener('click', () => { AudioEngine.init(); togglePlay(); });
   document.getElementById('deckBtn').addEventListener('click', openPlayer);
   window.addEventListener('keydown', e => { if (e.key === 'Escape' && playerOn) closePlayer(); });
+  /* Spotify: a public playlist, shown with Spotify's own embed player.
+     No account login and no keys live in this page: paste a public playlist link below. */
+  const SPOTIFY_PLAYLIST = 'https://open.spotify.com/playlist/52wKj8P1OknxIiqbo2Buky';
+  let spotifyLoad = null;
+  (function setupSpotify() {
+    const m = SPOTIFY_PLAYLIST.match(/playlist[/:]([A-Za-z0-9]+)/); if (!m) return;
+    const id = m[1], box = document.getElementById('plSpotify'), open = document.getElementById('plSpotifyOpen');
+    document.getElementById('plSpotifySoon').hidden = true;
+    open.href = 'https://open.spotify.com/playlist/' + id; open.hidden = false;
+    let frame = null;
+    // load the player only when the record player first opens, so the page stays light
+    const load = () => {
+      if (frame) return;
+      frame = document.createElement('iframe');
+      frame.title = 'Spotify playlist'; frame.loading = 'lazy';
+      frame.allow = 'autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture';
+      frame.src = 'https://open.spotify.com/embed/playlist/' + id + '?utm_source=generator&theme=0';
+      box.appendChild(frame); box.hidden = false;
+    };
+    spotifyLoad = load;
+    // clicking into the Spotify player moves focus into its frame: pause the turntable so the two don't play over each other
+    window.addEventListener('blur', () => { setTimeout(() => { if (frame && document.activeElement === frame && deck.playing) pauseRecord(); }, 0); });
+  })();
   plFile.addEventListener('change', () => {
     const f = plFile.files && plFile.files[0]; if (!f) return;
     if (ownRec && ownRec.url) URL.revokeObjectURL(ownRec.url);
@@ -2268,6 +2462,7 @@
     shadeMat.emissiveIntensity = 0.1 + ll * 0.9;
     moteMat.opacity = (1 - night) * 0.75;
     postMat.uniforms.uNight.value = night;
+    tickers.forEach(f => f(t, night));
 
     // dust + window leaves
     const mp = moteGeo.attributes.position.array;
@@ -2292,7 +2487,7 @@
       focusPose.pos.copy(camBase).addScaledVector(fwd, dF);
       dim.position.copy(camBase).addScaledVector(fwd, dF + 1.5); dim.lookAt(camBase);
     }
-    dim.material.opacity += (fAmt * 0.3 - dim.material.opacity) * 0.15;
+    dim.material.opacity += ((fObj && fObj.userData.inPlace ? 0 : fAmt) * 0.3 - dim.material.opacity) * 0.15;
     if (fi !== ctaFor) { ctaFor = fi; buildCta(fi); }
     const showCta = fAmt > 0.6 && flipT > 0.6 && ctaEl.childElementCount > 0 && !openId;
     canvas.classList.toggle('can-click', !!hovered || (fAmt > 0.6 && flipT > 0.6));
@@ -2314,10 +2509,14 @@
       const f = a === fObj ? fAmt : 0, e = f * f * (3 - 2 * f), turn = a === fObj ? flipT : 0;
       const lift = a === hovered && f === 0 ? 0.08 : 0;
       _wp.copy(h.pos); _wp.y += lift; _wp.z += lift;
-      _wp.lerp(focusPose.pos, e);
-      if (e > 0) _wp.addScaledVector(fwd, -Math.sin(turn * Math.PI) * a.userData.w * 0.35 * e);
+      const inPlace = a.userData.inPlace;
+      if (inPlace) _wp.y += Math.sin(turn * Math.PI) * 0.12 * e; // turns over where it stands, lifting clear of its holder only mid-turn
+      else {
+        _wp.lerp(focusPose.pos, e);
+        if (e > 0) _wp.addScaledVector(fwd, -Math.sin(turn * Math.PI) * a.userData.w * 0.35 * e);
+      }
       a.position.lerp(_wp, k);
-      const tx = lerp(h.rot.x, -tilt.y * 0.06, e), ty = lerp(h.rot.y, turn * Math.PI + tilt.x * 0.1, e), tz = lerp(h.rot.z, 0, e);
+      const tx = inPlace ? h.rot.x : lerp(h.rot.x, -tilt.y * 0.06, e), ty = lerp(h.rot.y, turn * Math.PI + (inPlace ? 0 : tilt.x * 0.1), e), tz = lerp(h.rot.z, 0, e);
       a.rotation.x = lerp(a.rotation.x, tx, k); a.rotation.y = lerp(a.rotation.y, ty, k); a.rotation.z = lerp(a.rotation.z, tz, k);
       // in focus, a face lights itself more and the room less, so it reads the same in sun or shade
       a.userData.faces.forEach((m, k) => { m.emissiveIntensity = e * (k ? lerp(0.46, 0.6, night) : lerp(0.12, 0.4, night)); m.color.setScalar(lerp(1, k ? 0.4 : 0.8, e)); });
@@ -2345,16 +2544,46 @@
     // espresso shot
     if (brew.t >= 0) {
       brew.t += dt;
-      needle.rotation.z = lerp(needle.rotation.z, brew.t < 3.2 ? -0.2 : 1.9, 0.06);
-      const pouring = brew.t > 0.6 && brew.t < 3.2;
-      stream.visible = pouring; crema.visible = brew.t > 0.8;
-      if (pouring) brew.level = Math.min(1, brew.level + dt / 2.6);
+      needle.rotation.z = lerp(needle.rotation.z, brew.t < 3.4 ? -0.2 : 1.9, 0.06);
+      // pre-infusion drips → a steady pair of streams → thinning, blonding tail → last drips
+      const bt = brew.t;
+      const flow = bt < 1.0 ? 0 : bt < 1.3 ? (bt - 1.0) / 0.3 : bt < 2.7 ? 1 : bt < 3.15 ? 1 - (bt - 2.7) / 0.45 * 0.6 : 0;
+      const dripping = (bt > 0.65 && bt < 1.05) || (bt > 3.1 && bt < 3.6);
+      const surfaceY = 0.365 + crema.position.y;
+      streams.forEach((m, i) => {
+        m.visible = flow > 0.02;
+        const r = 0.0045 + flow * 0.0065, len = 1.12 - surfaceY;
+        m.scale.set(r * (1 + Math.sin(t * 23 + i) * 0.12), len, r);
+        m.position.x = -0.15 + m.userData.dx + Math.sin(t * 9 + i * 2) * 0.0025 * flow;
+        m.rotation.z = -m.userData.dx * 0.06;
+      });
+      streamMat.color.setRGB(1, 1, 1).lerp(new THREE.Color('#d9a066'), bt > 2.7 ? Math.min(1, (bt - 2.7) / 0.5) : 0);
+      flowTex.offset.y += dt * 3.2;
+      if (flow > 0.02 || dripping) brew.level = Math.min(1, brew.level + dt * (flow > 0.02 ? flow / 2.0 : 0.04));
+      crema.visible = brew.level > 0.02;
       crema.position.y = 0.06 + brew.level * 0.17;
-      if (Math.random() < 0.25) puff(-3.14, TOP + 0.8, 1.52, 0.3);
-      if (brew.t > 1 && Math.random() < 0.12) puff(-4.26, TOP + 0.68, 1.28, 0.22);
-      if (brew.t > 4.2) { brew.t = -1; }
+      const cr = cupInner(0.17, 0.12, 0.24, 0.012, crema.position.y - 0.025) - 0.001; crema.scale.set(cr / 0.155, 1, cr / 0.155);
+      cremaMat.color.set('#3a1d0a').lerp(new THREE.Color('#ffffff'), Math.min(1, brew.level * 1.3));
+      ripple.position.y = crema.position.y + 0.004; ripple.material.opacity = flow > 0.05 ? 0.35 + Math.sin(t * 18) * 0.15 : ripple.material.opacity * 0.9;
+      ripple.scale.setScalar(1 + ((t * 2.4) % 1) * 1.6);
+      dropClock -= dt;
+      if (dripping && dropClock <= 0) {
+        dropClock = 0.12 + Math.random() * 0.18;
+        const d = drops.find(q => !q.visible); if (d) { d.visible = true; d.position.set(-0.15 + (Math.random() > 0.5 ? 0.05 : -0.05), 1.11, 0.39); d.userData.v = 0; }
+      }
+      // steam begins once there's coffee in the cup
+      if (bt > 1.3 && Math.random() < 0.22) puff(-4.26 + (Math.random() - 0.5) * 0.12, TOP + surfaceY + 0.04, 1.28 + (Math.random() - 0.5) * 0.08, 0.12 + Math.random() * 0.08, 0.22);
+      if (bt > 4.2) { brew.t = -1; brew.cool = 28; streams.forEach(m => { m.visible = false; }); }
     } else needle.rotation.z = lerp(needle.rotation.z, 1.9, 0.05);
-    if (brew.t < 0 && crema.visible && Math.random() < 0.03) puff(-4.26, TOP + 0.68, 1.28, 0.18);
+    drops.forEach(d => {
+      if (!d.visible) return; d.userData.v += 9.8 * 0.35 * dt; d.position.y -= d.userData.v * dt;
+      if (d.position.y < 0.365 + crema.position.y) d.visible = false;
+    });
+    // the cup keeps steaming for a while after the shot, thinning out as it cools
+    if (brew.t < 0 && brew.cool > 0) {
+      brew.cool -= dt;
+      if (Math.random() < 0.09 * Math.min(1, brew.cool / 12)) puff(-4.26 + (Math.random() - 0.5) * 0.1, TOP + 0.365 + crema.position.y + 0.04, 1.28, 0.1 + Math.random() * 0.06, 0.16);
+    }
 
     // grinder
     if (grind.t >= 0) {
@@ -2367,7 +2596,7 @@
 
     // pour-over
     brewLiquid.scale.y = lerp(brewLiquid.scale.y, pour.target, 0.02);
-    if (pour.target > 0.2 && brewLiquid.scale.y < 0.28 && Math.random() < 0.3) puff(-0.86, TOP + 1.3, 1.0, 0.18);
+    if (pour.target > 0.2 && brewLiquid.scale.y < 0.28 && Math.random() < 0.25) puff(-0.86 + (Math.random() - 0.5) * 0.2, TOP + 1.3, 1.0, 0.14, 0.2);
 
     // calendar page flip
     if (calendar.userData.flip) {
@@ -2393,8 +2622,12 @@
     // steam puffs
     puffs.forEach(p => {
       if (!p.visible) return; const u = p.userData; u.life += dt;
-      p.position.y += dt * 0.55; p.position.x += u.vx * dt;
-      const k = u.life / u.max; p.scale.setScalar(u.s * (1 + k * 2.2)); p.material.opacity = Math.sin(Math.min(1, k) * Math.PI) * 0.5;
+      const k = u.life / u.max;
+      p.position.y += dt * (0.34 - k * 0.14);
+      p.position.x += (u.vx + Math.sin(t * 1.6 + u.seed + k * 4) * 0.05) * dt;
+      p.material.rotation += u.spin * dt;
+      p.scale.set(u.s * (0.45 + k * 1.5), u.s * (0.7 + k * 2.1), 1);
+      p.material.opacity = Math.pow(Math.sin(Math.min(1, k) * Math.PI), 1.4) * u.peak;
       if (k >= 1) p.visible = false;
     });
 
